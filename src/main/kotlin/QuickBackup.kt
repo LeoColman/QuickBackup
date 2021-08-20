@@ -25,29 +25,70 @@
 package br.com.colman
 
 import com.github.ajalt.clikt.core.CliktCommand
+import com.github.ajalt.clikt.core.NoOpCliktCommand
+import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.convert
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.defaultLazy
 import com.github.ajalt.clikt.parameters.options.option
+import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
 import com.rockaport.alice.Alice
 import com.rockaport.alice.AliceContextBuilder
+import org.apache.commons.compress.archivers.ArchiveStreamFactory
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
+import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.utils.IOUtils
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.LocalDate.now
+import kotlin.io.path.Path
+import kotlin.io.path.createTempFile
 
-class QuickBackup : CliktCommand() {
+class QuickBackup : NoOpCliktCommand()
+
+class Restore : CliktCommand() {
+
+    val file by argument().file(mustExist = true)
+    val temporary = createTempFile().toFile()
+
+    val password by argument().convert { it.toCharArray() }
+
+    val destinationDir by option().file().defaultLazy { file.parentFile }
+
+    override fun run() {
+        decryptFile()
+        unzipFile()
+    }
+
+    private fun decryptFile() {
+        Alice(AliceContextBuilder().build()).decrypt(file, temporary, password)
+    }
+
+    private fun unzipFile() {
+        val zipFile = ZipFile(temporary)
+        zipFile.entries.asIterator().forEach {
+            val destination = File(destinationDir, it.name)
+            destinationDir.mkdirs()
+            IOUtils.copy(zipFile.getInputStream(it), destination.outputStream())
+        }
+        file.delete()
+    }
+}
+
+class Backup : CliktCommand() {
 
     val filesToZip by argument().path(mustExist = true).multiple()
 
     val password by argument().convert { it.toCharArray() }
 
-    val destination by option().default("backup-${now()}.zip")
+    val temporary = createTempFile().toFile()
+
+    val destination by option().file().default(File("backup-${now()}.zip.enc"))
 
     override fun run() {
         zipFiles()
@@ -55,7 +96,7 @@ class QuickBackup : CliktCommand() {
     }
 
     private fun zipFiles() {
-        ZipArchiveOutputStream(FileOutputStream(destination)).use { archive ->
+        ZipArchiveOutputStream(FileOutputStream(temporary)).use { archive ->
             filesToZip.map { it.toFile() }.flatMap { it.walkTopDown().toList() }.filter { it.isFile }.forEach {
                 val entry = ZipArchiveEntry(it, it.toString())
                 FileInputStream(it).use {
@@ -69,10 +110,10 @@ class QuickBackup : CliktCommand() {
     }
 
     private fun encryptFile() =
-        Alice(AliceContextBuilder().build()).encrypt(File(destination), File("$destination.enc"), password)
+        Alice(AliceContextBuilder().build()).encrypt(temporary, destination, password)
 
 }
 
 fun main(args: Array<String>) {
-    QuickBackup().main(args)
+    QuickBackup().subcommands(Backup(), Restore()).main(args)
 }
