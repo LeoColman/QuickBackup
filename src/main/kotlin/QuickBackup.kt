@@ -37,6 +37,15 @@ import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
 import com.rockaport.alice.Alice
 import com.rockaport.alice.AliceContextBuilder
+import javafx.application.Application.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.apache.commons.compress.archivers.zip.ZipFile
@@ -45,11 +54,12 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.LocalDate.now
+import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.createTempFile
 
 class QuickBackup : NoOpCliktCommand()
 
-class Restore : CliktCommand() {
+class Restore : CliktCommand(), CoroutineScope by CoroutineScope(IO) {
 
     val file by argument().file(mustExist = true)
     val temporary = createTempFile().toFile()
@@ -61,6 +71,7 @@ class Restore : CliktCommand() {
     override fun run() {
         decryptFile()
         unzipFile()
+        runBlocking { joinAll() }
     }
 
     private fun decryptFile() {
@@ -69,16 +80,19 @@ class Restore : CliktCommand() {
 
     private fun unzipFile() {
         val zipFile = ZipFile(temporary)
-        zipFile.entries.asSequence().forEach {
-            val destination = File(destinationDir, it.name)
-            destinationDir.mkdirs()
-            IOUtils.copy(zipFile.getInputStream(it), destination.outputStream())
+        val unzipJobs = zipFile.entries.toList().map {
+            launch {
+                val destination = File(destinationDir, it.name)
+                destinationDir.mkdirs()
+                zipFile.getInputStream(it).copyTo(destination.outputStream())
+            }
         }
+        runBlocking { unzipJobs.joinAll() }
         file.delete()
     }
 }
 
-class Backup : CliktCommand() {
+class Backup : CliktCommand(), CoroutineScope by CoroutineScope(IO) {
 
     val filesToZip by argument().path(mustExist = true).multiple()
 
@@ -95,14 +109,17 @@ class Backup : CliktCommand() {
 
     private fun zipFiles() {
         ZipArchiveOutputStream(FileOutputStream(temporary)).use { archive ->
-            filesToZip.map { it.toFile() }.flatMap { it.walkTopDown().toList() }.filter { it.isFile }.forEach {
+            val zipJobs  = filesToZip.map { it.toFile() }.flatMap { it.walkTopDown().toList() }.filter { it.isFile }.map {
                 val entry = ZipArchiveEntry(it, it.toString())
-                FileInputStream(it).use {
-                    archive.putArchiveEntry(entry)
-                    IOUtils.copy(it, archive)
-                    archive.closeArchiveEntry()
+                launch {
+                    FileInputStream(it).use {
+                        archive.putArchiveEntry(entry)
+                        IOUtils.copy(it, archive)
+                        archive.closeArchiveEntry()
+                    }
                 }
             }
+            runBlocking { zipJobs.joinAll() }
             archive.finish()
         }
     }
