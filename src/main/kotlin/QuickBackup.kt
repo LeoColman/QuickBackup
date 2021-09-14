@@ -29,15 +29,14 @@ import com.github.ajalt.clikt.core.NoOpCliktCommand
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.convert
+import com.github.ajalt.clikt.parameters.arguments.defaultLazy
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.options.default
-import com.github.ajalt.clikt.parameters.options.defaultLazy
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
 import com.rockaport.alice.Alice
 import com.rockaport.alice.AliceContextBuilder
-import org.apache.commons.compress.archivers.ArchiveStreamFactory
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.apache.commons.compress.archivers.zip.ZipFile
@@ -46,7 +45,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.time.LocalDate.now
-import kotlin.io.path.Path
 import kotlin.io.path.createTempFile
 
 class QuickBackup : NoOpCliktCommand()
@@ -58,7 +56,7 @@ class Restore : CliktCommand() {
 
     val password by argument().convert { it.toCharArray() }
 
-    val destinationDir by option().file().defaultLazy { file.parentFile }
+    val destinationDir by argument().file().defaultLazy { file.parentFile }
 
     override fun run() {
         decryptFile()
@@ -71,7 +69,7 @@ class Restore : CliktCommand() {
 
     private fun unzipFile() {
         val zipFile = ZipFile(temporary)
-        zipFile.entries.asIterator().forEach {
+        zipFile.entries.asSequence().forEach {
             val destination = File(destinationDir, it.name)
             destinationDir.mkdirs()
             IOUtils.copy(zipFile.getInputStream(it), destination.outputStream())
