@@ -54,4 +54,5 @@ dependencies {
 
     // Alice
     implementation("com.github.rockaport:alice:0.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.5.2-native-mt")
 }
