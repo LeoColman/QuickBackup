@@ -57,7 +57,7 @@ class QuickBackup : NoOpCliktCommand()
 class Restore : CliktCommand(), CoroutineScope by CoroutineScope(IO) {
 
     val file by argument().file(mustExist = true)
-    val temporary = createTempFile().toFile()
+    val temporary = createTempFile().toFile().apply { deleteOnExit() }
 
     val password by argument().convert { it.toCharArray() }
 
@@ -93,7 +93,7 @@ class Backup : CliktCommand(), CoroutineScope by CoroutineScope(IO) {
 
     val password by argument().convert { it.toCharArray() }
 
-    val temporary = createTempFile().toFile()
+    val temporary = createTempFile().toFile().apply { deleteOnExit() }
 
     val destination by option().file().default(File("backup-${now()}.zip.enc"))
 
